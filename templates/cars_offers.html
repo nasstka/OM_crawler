@@ -1,0 +1,26 @@
+<table border="1">
+    <thead>
+        <th>Offer URL</th>
+        <th>Car name</th>
+        <th>Price</th>
+        <th>Dealer name</th>
+        <th>Collected date</th>
+        <th>Car sold date</th>
+    </thead>
+    <tbody>
+        {% for key in offer_data %}
+        <tr>
+            <td> {{ offer_data[key].get('offer_link') }} </td>
+            <td> {{ offer_data[key].get('car_name') }} </td>
+            <td> {{ offer_data[key].get('offer_price') }} </td>
+            <td> {{ offer_data[key].get('dealer_name') }} </td>
+            <td> {{ offer_data[key].get('collected_data') }} </td>
+            {% if key in sold %}
+            <td> {{ sold_date }} </td> 
+            {% else %}
+            <td></td>
+            {% endif %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

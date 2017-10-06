@@ -1,0 +1,14 @@
+<table border="1">
+    <thead>
+        <th>Car name</th>
+        <th>Total car price</th>
+    </thead>
+    <tbody>
+        {% for car_name, car_price in data.items() %}
+        <tr>
+            <td>{{ car_name }}</td>
+            <td>{{ car_price }} PLN</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
