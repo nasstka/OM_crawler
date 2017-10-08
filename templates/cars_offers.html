@@ -8,14 +8,14 @@
         <th>Car sold date</th>
     </thead>
     <tbody>
-        {% for car_data in data['all_cars'].values() %}
+        {% for offer_id, car_data in data['all_cars'].items() %}
         <tr>
             <td> {{ car_data['offer_link'] }} </td>
             <td> {{ car_data['car_name'] }} </td>
             <td> {{ car_data['offer_price'] }} </td>
             <td> {{ car_data['dealer_name'] }} </td>
             <td> {{ car_data['collected_data'] }} </td>
-            {% if key in data['sold_cars'] %}
+            {% if offer_id in data['sold_cars'] %}
             <td> {{ data['sold_date'] }} </td> 
             {% else %}
             <td></td>
