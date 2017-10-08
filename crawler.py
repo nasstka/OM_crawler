@@ -1,133 +1,194 @@
-import json
-import io
-import os
+"""
+Script monitors www.otomoto.pl - a Polish car sales ad website.
+It finds and stores all car dealers located in 50km radius from Poznań and
+car sales offers published by those dealers.
+"""
+
 import collections
 import datetime
-import requests
-
-import jinja2
+import io
+import json
+import os
+import time
 
 from bs4 import BeautifulSoup
+import requests
+import jinja2
 
-BASE_URL = 'https://www.otomoto.pl/osobowe/poznan/'
+BASE_URL = (
+    'https://www.otomoto.pl/'
+    'osobowe/poznan/?search%5Bdist%5D=50'
+)
 
-# Offers located in 50km radius from Poznań
-main_page_link = "{}?search%5Bdist%5D=50&search%5Bcountry%5D=".format(BASE_URL)
-response = requests.get(main_page_link)
-soup = BeautifulSoup(response.content, 'html.parser')
+PARSER_LIBRARY = 'html.parser'
+TIME_FORMAT = '%d.%m.%Y, %H:%M:%S'
 
-# Get total page count on main page
-pagination = soup.find('ul', class_='om-pager rel')
-pagination_number = pagination.find_all('li', class_='')
-total_pages_count = int(
-    pagination_number[-1].get_text().strip()
-    )
+OFFERS_FILE_NEW = 'offers_list_new.json'
+OFFERS_FILE_OLD = 'offers_list_old.json'
 
-# Generete links for all pages
-pages_links = [main_page_link]
-page_link = 'https://www.otomoto.pl/osobowe/poznan/?search%5Bdist%5D=50&search%5Bcountry%5D=&page='
+FILEPATH_FILE_NEW = os.path.join('crawl_reports', OFFERS_FILE_NEW)
+FILEPATH_FILE_OLD = os.path.join('crawl_reports', OFFERS_FILE_OLD)
 
-# Low page count for test, change to total_pages_count + 1 to crawl all pages
-for page_number in range(2, 4):
-    link = '{}{}'.format(page_link, page_number)
-    pages_links.append(link)
 
-# Crawl all pages
-for page in pages_links:
-    page_response = requests.get(page)
-    page_soup = BeautifulSoup(page_response.content, 'html.parser')
+def main_page_links(main_soup):
+    """
+    Creates pagination links for main page.
+    """
+    print('(START) Creating pagination links for main page.')
+    start_time = time.time()
 
-    # Get links to dealers shop
-    dealers_offers = page_soup.find_all('article', class_='has-feature-shop')
+    pagination_links = [BASE_URL]
+
+    pagination = main_soup.find('ul', class_='om-pager rel')
+    pagination_elements = pagination.find_all('li', class_='')
+    last_pagination_element = pagination_elements[-1].get_text()
+    total_pages_count = int(last_pagination_element.strip())
+
+    for page_number in range(2, total_pages_count + 1):
+        link = '{}&page={}'.format(BASE_URL, page_number)
+        pagination_links.append(link)
+
+    end_time = round((time.time() - start_time), 2)
+    print('FINISHED after {} sec.\n'.format(end_time))
+
+    return pagination_links
+
+
+def crawl_all_pages(pages_links):
+    """
+    Crawls all main pages and gets dealers shop links.
+    """
+    print('(START) Getting dealers shop links.')
+    start_time = time.time()
 
     dealers_shop_links = []
-    for offer in dealers_offers:
-        class_identifier = 'offer-item__link-seller in-content'
-        links = offer.find('a', class_=class_identifier).get('href')
+    for link in pages_links:
+        page_response = requests.get(link)
+        page_soup = BeautifulSoup(page_response.content, PARSER_LIBRARY)
 
-        if links not in dealers_shop_links:
-            dealers_shop_links.append(links)
+        # Getting links to dealers shop
+        dealer_class = 'has-feature-shop'
+        dealers_offers = page_soup.find_all('article', class_=dealer_class)
+
+        for offer in dealers_offers:
+            class_identifier = 'offer-item__link-seller in-content'
+            links = offer.find('a', class_=class_identifier).get('href')
+
+            if links not in dealers_shop_links:
+                dealers_shop_links.append(links)
+
+    end_time = round((time.time() - start_time), 2)
+    print('FINISHED after {} sec.\n'.format(end_time))
+
+    return dealers_shop_links
 
 
-# Get info about dealers
-dealers = {}
+def get_dealers_info(dealers_shop_links):
+    """
+    Gets info about dealers - name and list of links of pages with offers.
+    """
+    print('(START) Getting information about all dealers.')
+    start_time = time.time()
 
-# Temporary dealers ids
-dealer_id = 0
-for dealer in dealers_shop_links:
-    dealer_response = requests.get(dealer)
-    dealer_soup = BeautifulSoup(dealer_response.content, 'html.parser')
+    dealers = {}
+    for dealer_id, link in enumerate(dealers_shop_links):
+        dealer_response = requests.get(link)
+        dealer_soup = BeautifulSoup(dealer_response.content, PARSER_LIBRARY)
+        dealer_name_element = dealer_soup.find('div', class_='dealer-title')
 
-    dealer_name = dealer_soup.find('div', class_='dealer-title').get_text()
+        if not dealer_name_element:
+            continue
 
-    # Generete links for all pages with offers
-    dealer_offers_pagination = dealer_soup.find('ul', class_='om-pager rel')
+        dealer_name = dealer_name_element.get_text().split()
 
-    dealers_pages = [dealers_shop_links[dealer_id]]
+        # Genereting links for all pages with dealer offers
+        dealer_pagination = dealer_soup.find('ul', class_='om-pager rel')
+        if dealer_pagination:
+            if len(dealer_pagination) > 1:
+                dealer_page_count = dealer_pagination.find_all('li', class_='')
+            else:
+                dealer_page_count = dealer_pagination.find('li', class_='')
 
-    if dealer_offers_pagination is not None:
-        if len(dealer_offers_pagination) > 1:
-            dealer_offers_number = dealer_offers_pagination.find_all(
-                'li',
-                class_=''
-            )
+            page_count = dealer_page_count[-1].get_text().strip()
+            total_offers_pages_count = int(page_count)
+
+            dealers_pages = [link]
+            for page in range(2, total_offers_pages_count + 1):
+                links = '{}/shop/?page={}'.format(link, page)
+                dealers_pages.append(links)
         else:
-            dealer_offers_number = dealer_offers_pagination.find(
-                'li',
-                class_=''
-            )
+            dealers_pages = [link]
 
-        total_offers_pages_count = int(
-            dealer_offers_number[-1].get_text().strip()
-        )
+        # Collecting info about all dealers
+        dealers[dealer_id] = {
+            'dealer_name': ' '.join(dealer_name),
+            'dealers_pages': dealers_pages,
+        }
 
-        for page in range(2, total_offers_pages_count + 1):
-            link = '{}/shop/?page={}'.format(
-                dealers_shop_links[dealer_id],
-                page
-            )
-            dealers_pages.append(link)
-    else:
-        dealers_pages = [dealers_shop_links[dealer_id]]
+    end_time = round((time.time() - start_time), 2)
+    print('FINISHED after {} sec.\n'.format(end_time))
 
-    # Collecting info about all dealers
-    dealers[dealer_id] = {
-        'dealer_name': dealer_name.strip(),
-        'dealer_link': dealers_shop_links[dealer_id],
-        'dealers_pages': dealers_pages,
-    }
-    dealer_id += 1
+    return dealers
 
-# Get all dealers offers
-offers = {}
-for key in dealers:
-    for link in dealers[key]['dealers_pages']:
-        offer_response = requests.get(link)
-        offer_soup = BeautifulSoup(offer_response.content, 'html.parser')
 
-        offer_info = offer_soup.find_all('a', class_='offer-title__link')
+def get_dealers_offers(dealers):
+    """
+    Gets information about all dealers offers - id, URL, car name, dealer name,
+    collected date.
+    """
+    print('(START) Getting information about dealers offers.')
+    start_time = time.time()
 
-        # Collect main info about each offer
-        for info in offer_info:
-            offer_id = info['data-ad-id']
-            offer_link = info['href']
-            car_name = info['title']
-            offers[offer_id] = {
-                'offer_link': offer_link,
-                'car_name': car_name,
-                'dealer_name': dealers[key].get('dealer_name'),
-                'offer_price': ' '.join(offer_soup.find('span', class_='offer-price__number').get_text().split()),
-                'collected_data': str(datetime.datetime.now().strftime('%d.%m.%Y, %H:%M:%S')),
-            }
+    offers = {}
+    for dealer_id in dealers:
+        for link in dealers[dealer_id]['dealers_pages']:
+            offer_response = requests.get(link)
+            offer_soup = BeautifulSoup(offer_response.content, PARSER_LIBRARY)
 
-if not os.path.isdir('data'):
-    os.makedirs('data')
+            offer_info = offer_soup.find_all('a', class_='offer-title__link')
+            if not offer_info:
+                continue
 
-if os.path.isfile(os.path.join('data', 'offers_list_new.json')):
-    os.rename(os.path.join('data', 'offers_list_new.json'), os.path.join('data', 'offers_list_old.json'))
-    with io.open(os.path.join('data', 'offers_list_new.json'), 'w', encoding='utf8') as outfile:
+            # Collecting info about each offer
+            price_class = 'offer-price__number'
+            offer_price = offer_soup.find('span', class_=price_class)
+            for info in offer_info:
+                offer_id = info['data-ad-id']
+                offer_link = info['href']
+                car_name = info['title']
+                dealer_name = dealers[dealer_id].get('dealer_name')
+                price = offer_price.get_text().split()
+
+                collected_date = str(
+                    datetime.datetime.now().strftime(TIME_FORMAT)
+                )
+
+                offers[offer_id] = {
+                    'offer_link': offer_link,
+                    'car_name': car_name,
+                    'dealer_name': dealer_name,
+                    'offer_price': ' '.join(price),
+                    'collected_data': collected_date,
+                }
+
+    end_time = round((time.time() - start_time), 2)
+    print('FINISHED after {} sec.\n'.format(end_time))
+
+    return offers
+
+
+def save_json_file(data_to_save, filename):
+    """
+    Saves data into JSON file.
+    """
+
+    if not os.path.isdir('crawl_reports'):
+        os.makedirs('crawl_reports')
+
+    filepath = os.path.join('crawl_reports', filename)
+    with io.open(filepath, 'w', encoding='utf8') as outfile:
         offer_info = json.dumps(
-            offers,
+            data_to_save,
             indent=4,
             sort_keys=True,
             separators=(',', ': '),
@@ -135,75 +196,127 @@ if os.path.isfile(os.path.join('data', 'offers_list_new.json')):
         )
         outfile.write(offer_info)
 
-else:
-    with io.open(os.path.join('data', 'offers_list_new.json'), 'w', encoding='utf8') as outfile:
-        offer_info = json.dumps(
-            offers,
-            indent=4,
-            sort_keys=True,
-            separators=(',', ': '),
-            ensure_ascii=False
-        )
-        outfile.write(offer_info)
 
-if os.path.isfile(os.path.join('data', 'offers_list_new.json')) and os.path.isfile(os.path.join('data', 'offers_list_old.json')):
-    with open('data/offers_list_new.json') as new:
+def save_html_file(data_to_render, template, filename):
+    """
+    Generates an HTML file using a template with Jinja2.
+    """
+
+    templates_path = os.path.join('templates', template)
+    with io.open(templates_path, 'r', encoding='utf8') as template_file:
+        template = jinja2.Template(template_file.read())
+        render_template = template.render(
+            data=data_to_render
+        )
+
+    html_table = os.path.join('crawl_reports', filename)
+    with io.open(html_table, 'w', encoding='utf8') as outfile:
+        outfile.write(render_template)
+
+
+def find_sold_cars():
+    """
+    Detects which car was sold.
+    """
+    print('(START) Detecting which car was sold.')
+    start_time = time.time()
+
+    with open(FILEPATH_FILE_NEW) as new:
         new_data = json.load(new)
 
-    with open('data/offers_list_old.json') as old:
+    with open(FILEPATH_FILE_OLD) as old:
         old_data = json.load(old)
-
 
     sold_cars = set(old_data).difference(set(new_data))
 
     sold_cars_data = {offer_id: old_data[offer_id] for offer_id in sold_cars}
 
-    with io.open(os.path.join('data', 'sold_cars.json'), 'w', encoding='utf8') as outfile:
-        sold_cars_info = json.dumps(
-            sold_cars_data,
-            indent=4,
-            sort_keys=True,
-            separators=(',', ': '),
-            ensure_ascii=False
-        )
-        outfile.write(sold_cars_info)
+    save_json_file(sold_cars_data, 'sold_cars.json')
 
     all_cars = dict(old_data, **new_data)
-    sold_date = str(datetime.datetime.now().strftime('%d.%m.%Y, %H:%M:%S'))
+    sold_date = str(datetime.datetime.now().strftime(TIME_FORMAT))
 
-    with io.open(os.path.join('templates', 'cars_offers.html'), 'r', encoding='utf8') as template_file:
-        template = jinja2.Template(template_file.read())
-        render_template = template.render(offer_data=all_cars, sold=sold_cars_data, sold_date=sold_date)
+    render_data = {
+        'all_cars': all_cars,
+        'sold_cars': sold_cars_data,
+        'sold_date': sold_date,
+    }
 
-    with io.open(os.path.join('data', 'offers.html'), 'w', encoding='utf8') as outfile:
-        outfile.write(render_template)
+    save_html_file(render_data, 'cars_offers.html', 'offers.html')
 
-# Sold cars
-if os.path.isfile('data/offers_list_new.json'):
-    with open('data/offers_list_new.json') as new:
+    end_time = round((time.time() - start_time), 2)
+    print('FINISHED after {} sec.\n'.format(end_time))
+
+
+def total_sum_of_cars_price():
+    """
+    Sums up car prices for relevant car model.
+    """
+    print('(START) Summing up car prices for relevant car model.')
+    start_time = time.time()
+
+    with open(FILEPATH_FILE_NEW) as new:
         new_data = json.load(new)
 
-    results = collections.defaultdict(int)
+    results = collections.defaultdict(float)
 
     for car_data in new_data.values():
-        car_price = int(car_data['offer_price'][:-4].replace(' ', ''))
+        price = car_data['offer_price'][:-4].replace(',', '.')
+        car_price = float(price.replace(' ', ''))
 
         results[car_data['car_name']] += car_price
 
-    with io.open(os.path.join('data', 'cars.json'), 'w', encoding='utf8') as outfile:
-        cars_info = json.dumps(
-            results,
-            indent=4,
-            sort_keys=True,
-            separators=(',', ': '),
-            ensure_ascii=False
+    save_json_file(results, 'cars.json')
+    save_html_file(results, 'cars_info.html', 'cars.html')
+
+    end_time = round((time.time() - start_time), 2)
+    print('FINISHED after {} sec.'.format(end_time))
+
+
+if __name__ == '__main__':
+    print('\n=================================================')
+    print(
+        'SCRIPT STARTS at {}\n'.format(
+            datetime.datetime.now().strftime(TIME_FORMAT)
         )
-        outfile.write(cars_info)
+    )
 
+    response = requests.get(BASE_URL)
+    soup_data = BeautifulSoup(response.content, PARSER_LIBRARY)
 
-    with io.open(os.path.join('templates', 'cars_info.html'), 'r', encoding='utf8') as template_file:
-        template = jinja2.Template(template_file.read())
-        render_template = template.render(data=results)
+    main_page_links_data = main_page_links(soup_data)
+    crawl_data = crawl_all_pages(main_page_links_data)
+    dealers_info = get_dealers_info(crawl_data)
+    all_offers = get_dealers_offers(dealers_info)
 
-    with io.open(os.path.join('data', 'cars.html'), 'w', encoding='utf8') as outfile:
-        outfile.write(render_template)
+    print('Saving all data into JSON file.\n')
+    if os.path.isfile(FILEPATH_FILE_NEW):
+        os.rename(FILEPATH_FILE_NEW, FILEPATH_FILE_OLD)
+
+    save_json_file(all_offers, OFFERS_FILE_NEW)
+
+    dealers_list = os.path.join('crawl_reports', 'dealers_list.txt')
+    with io.open(dealers_list, 'w', encoding='utf8') as dealers_info_file:
+        dealers_info_file.write(
+            'Car dealers located in 50km radius from Poznań:\n'
+        )
+        for dealer_id in dealers_info:
+            dealers_info_file.write(
+                '\n\t{}: {}\n'.format(
+                    dealer_id,
+                    dealers_info[dealer_id]['dealer_name']
+                )
+            )
+
+    if os.path.isfile(FILEPATH_FILE_NEW) and os.path.isfile(FILEPATH_FILE_OLD):
+        find_sold_cars()
+
+    if os.path.isfile(FILEPATH_FILE_NEW):
+        total_sum_of_cars_price()
+
+    print(
+        '\nSCRIPT ENDS at {}'.format(
+            datetime.datetime.now().strftime(TIME_FORMAT)
+        )
+    )
+    print('=================================================\n')
