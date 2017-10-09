@@ -1,26 +1,34 @@
-<table border="1">
-    <thead>
-        <th>Offer URL</th>
-        <th>Car name</th>
-        <th>Price</th>
-        <th>Dealer name</th>
-        <th>Collected date</th>
-        <th>Car sold date</th>
-    </thead>
-    <tbody>
-        {% for offer_id, car_data in data['all_cars'].items() %}
-        <tr>
-            <td> {{ car_data['offer_link'] }} </td>
-            <td> {{ car_data['car_name'] }} </td>
-            <td> {{ car_data['offer_price'] }} </td>
-            <td> {{ car_data['dealer_name'] }} </td>
-            <td> {{ car_data['collected_data'] }} </td>
-            {% if offer_id in data['sold_cars'] %}
-            <td> {{ data['sold_date'] }} </td> 
-            {% else %}
-            <td></td>
-            {% endif %}
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<!DOCTYPE html>
+<html lang="ang">
+    <head>
+        <title>Cars sales offers</title>
+    </head>
+    <body>
+        <table border="1">
+            <thead>
+                <th>Car name</th>
+                <th>Dealer name</th>
+                <th>Price</th>
+                <th>Collected date</th>
+                <th>Offer URL</th>
+                <th>Car sold date</th>
+            </thead>
+            <tbody>
+                {% for offer_id, car_data in data['all_cars'].items() %}
+                <tr>
+                    <td> {{ car_data['car_name'] | truncate(40) }} </td>
+                    <td> {{ car_data['dealer_name'] | truncate(45) }} </td>
+                    <td> {{ car_data['offer_price'] }} </td>
+                    <td> {{ car_data['collected_data'] }} </td>
+                    <td><a href="{{ car_data['offer_link'] }}">Offer details</a></td>
+                    {% if offer_id in data['sold_cars'] %}
+                    <td> {{ data['sold_date'] }} </td> 
+                    {% else %}
+                    <td></td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </body>
+</html>

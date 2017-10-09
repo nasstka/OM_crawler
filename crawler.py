@@ -315,7 +315,7 @@ if __name__ == '__main__':
         total_sum_of_cars_price()
 
     print(
-        '\nSCRIPT ENDS at {}'.format(
+        '\nSCRIPT ENDED at {}'.format(
             datetime.datetime.now().strftime(TIME_FORMAT)
         )
     )
